@@ -116,38 +116,38 @@ aws iam add-role-to-instance-profile --instance-profile-name LoadTesting-Instanc
 sleep 10
 
 
-#InstanceID=$(aws ec2 run-instances --image-id $AMI --iam-instance-profile Name=LoadTesting-Instance-Profile --key-name $KeyPairName --security-group-ids $DefaultSecurityGroup $SecurityGroup --instance-type $PassiveInstanceType --user-data file://configJenkinsMaster.sh --subnet $Subnet --associate-public-ip-address --output json | grep "InstanceId" | awk '{print $2}' | sed 's/\"//g' | sed 's/\,//g')
+InstanceID=$(aws ec2 run-instances --image-id $AMI --iam-instance-profile Name=LoadTesting-Instance-Profile --key-name $KeyPairName --security-group-ids $DefaultSecurityGroup $SecurityGroup --instance-type $PassiveInstanceType --user-data file://configJenkinsMaster.sh --subnet $Subnet --associate-public-ip-address --output json | grep "InstanceId" | awk '{print $2}' | sed 's/\"//g' | sed 's/\,//g')
 
 
-# START Testing spot implementation 
-# encode the user data
-
-ENCODED_USER_DATA=`cat configJenkinsMaster.sh | base64 -w0` 
-InstanceID=""
-RESPONSE=$(aws ec2 request-spot-instances --launch-group "$PROJECT" --spot-price "$OnDemandPrice" --instance-count 1 --type "one-time" --launch-specification "{\"ImageId\": \"$AMI\",  \"KeyName\": \"$KeyPairName\",  \"UserData\": \"$ENCODED_USER_DATA\",  \"InstanceType\": \"$InstanceType\",  \"Placement\": {    \"AvailabilityZone\": \"$InstanceAZ\"  },  \"NetworkInterfaces\": [    {      \"DeviceIndex\": 0,      \"SubnetId\": \"$Subnet\",      \"Groups\": [ \"$DefaultSecurityGroup\", \"$SecurityGroup\" ],      \"AssociatePublicIpAddress\": true    }  ],  \"IamInstanceProfile\": {    \"Name\": \"LoadTesting-Instance-Profile\"  }}" --output json ) 
-
-
-SPOT_REQUEST_ID=$(echo $RESPONSE | grep SpotInstanceRequestId | egrep -o 'sir-.*"' | sed 's/".*//')
-
-echo "Spot Request Opened:" $SPOT_REQUEST_ID
-
-# poll for request to get fullfilled
-echo -ne "extracting instance id(s) "
-while true; do
-        SPOT_REQUEST_STATUS=`aws ec2 describe-spot-instance-requests --spot-instance-request-ids $SPOT_REQUEST_ID |  grep STATUS | cut -d$'\t' -f2`
-        echo -ne "."
-        # wait until request is fulfilled
-        if [ $SPOT_REQUEST_STATUS == "fulfilled" ]
-        then
-               # extract the instance id
-               InstanceID=`aws ec2 describe-spot-instance-requests --spot-instance-request-ids $SPOT_REQUEST_ID --query SpotInstanceRequests[*].{ID:InstanceId}`
-
-                break
-        fi
-        sleep 0.7
-done
-
-# END Testing spot implementation
+#---------------START Testing spot implementation 
+## encode the user data
+#
+#ENCODED_USER_DATA=`cat configJenkinsMaster.sh | base64 -w0` 
+#InstanceID=""
+#RESPONSE=$(aws ec2 request-spot-instances --launch-group "$PROJECT" --spot-price "$OnDemandPrice" --instance-count 1 --type "one-time" --launch-specification "{\"ImageId\": \"$AMI\",  \"KeyName\": \"$KeyPairName\",  \"UserData\": \"$ENCODED_USER_DATA\",  \"InstanceType\": \"$InstanceType\",  \"Placement\": {    \"AvailabilityZone\": \"$InstanceAZ\"  },  \"NetworkInterfaces\": [    {      \"DeviceIndex\": 0,      \"SubnetId\": \"$Subnet\",      \"Groups\": [ \"$DefaultSecurityGroup\", \"$SecurityGroup\" ],      \"AssociatePublicIpAddress\": true    }  ],  \"IamInstanceProfile\": {    \"Name\": \"LoadTesting-Instance-Profile\"  }}" --output json ) 
+#
+#
+#SPOT_REQUEST_ID=$(echo $RESPONSE | grep SpotInstanceRequestId | egrep -o 'sir-.*"' | sed 's/".*//')
+#
+#echo "Spot Request Opened:" $SPOT_REQUEST_ID
+#
+## poll for request to get fullfilled
+#echo -ne "extracting instance id(s) "
+#while true; do
+#        SPOT_REQUEST_STATUS=`aws ec2 describe-spot-instance-requests --spot-instance-request-ids $SPOT_REQUEST_ID |  grep STATUS | cut -d$'\t' -f2`
+#        echo -ne "."
+#        # wait until request is fulfilled
+#        if [ $SPOT_REQUEST_STATUS == "fulfilled" ]
+#        then
+#               # extract the instance id
+#               InstanceID=`aws ec2 describe-spot-instance-requests --spot-instance-request-ids $SPOT_REQUEST_ID --query SpotInstanceRequests[*].{ID:InstanceId}`
+#
+#                break
+#        fi
+#        sleep 0.7
+#done
+#
+#-----------------END Testing spot implementation
 
 
 sleep 10

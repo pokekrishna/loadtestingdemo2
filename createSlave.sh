@@ -44,7 +44,7 @@ do
 
 # encode the user data
 InstanceID=""
-ENCODED_USER_DATA=`cat /usr/share/jmeter/extras/configJMeterSlave.sh.sh | base64 -w0` 
+ENCODED_USER_DATA=`cat /usr/share/jmeter/extras/configJMeterSlave.sh | base64 -w0` 
 
 RESPONSE=$(aws ec2 request-spot-instances --launch-group "$PROJECT" --spot-price "$OnDemandPrice" --instance-count 1 --type "one-time" --launch-specification "{\"ImageId\": \"$AMI\",  \"KeyName\": \"$KeyPairName\",  \"UserData\": \"$ENCODED_USER_DATA\",  \"InstanceType\": \"$InstanceType\",  \"Placement\": {    \"AvailabilityZone\": \"$InstanceAZ\"  },  \"NetworkInterfaces\": [    {      \"DeviceIndex\": 0,      \"SubnetId\": \"$Subnet\",      \"Groups\": [ \"$DefaultSecurityGroup\"],      \"AssociatePublicIpAddress\": true    }  ],  \"IamInstanceProfile\": {    \"Name\": \"LoadTesting-Instance-Profile\"  }}" --output json ) 
 
