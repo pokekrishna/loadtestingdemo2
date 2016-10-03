@@ -61,5 +61,5 @@ aws s3 cp "/var/log/cloud-init-output.log" s3://$BUCKET_RESULT/Logs/jmeter_logs.
 aws s3 cp "slave.log" s3://$BUCKET_RESULT/Logs/slave.log --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
 
 #####terminating all slave instances
-ID=`aws ec2 describe-instances --filters "Name=tag:Name,Values=Slave_$PROJECT" "Name=instance-state-name,Values=running" --query "Reservations[*].Instances[*].InstanceId" --output text | tr -s '\n' ' ' `
+ID="`aws ec2 describe-instances --filters "Name=tag:Name,Values=Slave_$PROJECT" "Name=instance-state-name,Values=running" --query "Reservations[*].Instances[*].InstanceId" --output text | tr -s '\n' ' '"
 aws ec2 terminate-instances --instance-ids $ID
