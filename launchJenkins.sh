@@ -121,8 +121,9 @@ sleep 10
 
 # START Testing spot implementation 
 # encode the user data
-ENCODED_USER_DATA=`python EncodeToBase64.py configJenkinsMaster.sh` 
 
+ENCODED_USER_DATA=`cat configJenkinsMaster.sh | base64 -w0` 
+InstanceID=""
 RESPONSE=$(aws ec2 request-spot-instances --launch-group "$PROJECT" --spot-price "$OnDemandPrice" --instance-count 1 --type "one-time" --launch-specification "{\"ImageId\": \"$AMI\",  \"KeyName\": \"$KeyPairName\",  \"UserData\": \"$ENCODED_USER_DATA\",  \"InstanceType\": \"$InstanceType\",  \"Placement\": {    \"AvailabilityZone\": \"$InstanceAZ\"  },  \"NetworkInterfaces\": [    {      \"DeviceIndex\": 0,      \"SubnetId\": \"$Subnet\",      \"Groups\": [ \"$DefaultSecurityGroup\", \"$SecurityGroup\" ],      \"AssociatePublicIpAddress\": true    }  ],  \"IamInstanceProfile\": {    \"Name\": \"LoadTesting-Instance-Profile\"  }}" --output json ) 
 
 

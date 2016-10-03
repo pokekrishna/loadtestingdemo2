@@ -40,13 +40,34 @@ count=`expr $SlavesNeeded - $Running`
 while [ $count > 0 ]
 do
 
-InstanceID=$(aws ec2 run-instances --image-id $AMI --key-name $KeyPairName --security-group-ids $DefaultSecurityGroup --instance-type $InstanceType --subnet $Subnet --associate-public-ip-address --user-data file:///usr/share/jmeter/extras/configJMeterSlave.sh --output json | grep "InstanceId" | awk '{print $2}' | sed 's/\"//g' | sed 's/\,//g')
+#InstanceID=$(aws ec2 run-instances --image-id $AMI --key-name $KeyPairName --security-group-ids $DefaultSecurityGroup --instance-type $InstanceType --subnet $Subnet --associate-public-ip-address --user-data file:///usr/share/jmeter/extras/configJMeterSlave.sh --output json | grep "InstanceId" | awk '{print $2}' | sed 's/\"//g' | sed 's/\,//g')
 
-# create a spot request for one instance at a time
+# encode the user data
+InstanceID=""
+ENCODED_USER_DATA=`cat /usr/share/jmeter/extras/configJMeterSlave.sh.sh | base64 -w0` 
 
-# wait for request to fulfill
-# wait for instances to come up
-# get the instance id
+RESPONSE=$(aws ec2 request-spot-instances --launch-group "$PROJECT" --spot-price "$OnDemandPrice" --instance-count 1 --type "one-time" --launch-specification "{\"ImageId\": \"$AMI\",  \"KeyName\": \"$KeyPairName\",  \"UserData\": \"$ENCODED_USER_DATA\",  \"InstanceType\": \"$InstanceType\",  \"Placement\": {    \"AvailabilityZone\": \"$InstanceAZ\"  },  \"NetworkInterfaces\": [    {      \"DeviceIndex\": 0,      \"SubnetId\": \"$Subnet\",      \"Groups\": [ \"$DefaultSecurityGroup\"],      \"AssociatePublicIpAddress\": true    }  ],  \"IamInstanceProfile\": {    \"Name\": \"LoadTesting-Instance-Profile\"  }}" --output json ) 
+
+
+SPOT_REQUEST_ID=$(echo $RESPONSE | grep SpotInstanceRequestId | egrep -o 'sir-.*"' | sed 's/".*//')
+
+echo "Spot Request Opened:" $SPOT_REQUEST_ID
+
+# poll for request to get fullfilled
+echo -ne "extracting instance id(s) "
+while true; do
+        SPOT_REQUEST_STATUS=`aws ec2 describe-spot-instance-requests --spot-instance-request-ids $SPOT_REQUEST_ID |  grep STATUS | cut -d$'\t' -f2`
+        echo -ne "."
+        # wait until request is fulfilled
+        if [ $SPOT_REQUEST_STATUS == "fulfilled" ]
+        then
+               # extract the instance id
+               InstanceID=`aws ec2 describe-spot-instance-requests --spot-instance-request-ids $SPOT_REQUEST_ID --query SpotInstanceRequests[*].{ID:InstanceId}`
+
+                break
+        fi
+        sleep 0.7
+done
 
 
 
