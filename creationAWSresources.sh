@@ -6,6 +6,16 @@ source EC2instanceproperties.sh
 source validator.sh --source-only
 
 
+# run the spot advisor module 
+python -u SpotAdvisorModule/Main.py
+
+#output filename -> slave_spot_instance_type4
+SPOT_ADVISOR_OUTPUT_FILE="slave_spot_instance_type"
+InstanceType=`cut -d' ' -f1 ${SPOT_ADVISOR_OUTPUT_FILE}`
+InstanceAZ=`cut -d' ' -f2 ${SPOT_ADVISOR_OUTPUT_FILE}`
+OnDemandPrice=`cut -d' ' -f3 ${SPOT_ADVISOR_OUTPUT_FILE}`
+
+
 while true; do 
 	echo -ne "Create VPC (y/n)? "
 	read create_VPC
@@ -77,7 +87,7 @@ then
 	while true; do
 		echo -ne "Enter CIDR Block: "
 	    read cidr
-		Subnet=$(aws ec2 create-subnet --vpc-id $VPC --cidr-block $cidr | grep -o "subnet-[0-9,a-z,A-Z]*")
+		Subnet=$(aws ec2 create-subnet --availability-zone $InstanceAZ --vpc-id $VPC --cidr-block $cidr | grep -o "subnet-[0-9,a-z,A-Z]*")
 		if [[ $? -eq 0 ]]; then
 			break
 		fi

@@ -22,44 +22,51 @@ while true; do
 	fi
 done
 
-while true; do 
-	echo -n "Enter Instance Type: "
-	read InstanceType
-	
-	if `validateInput "." $`; then
-		# creating a temp file for exit status storage
-		TEMP_EXIT_STATUS_FILE="/tmp/aws_temp_exit_status_file"
-		TEMP_COMMAND_OUTPUT_FILE="/tmp/aws_temp_command_output_file"
-		> ${TEMP_EXIT_STATUS_FILE}
-		> ${TEMP_COMMAND_OUTPUT_FILE}
-		# validating the input instance by running the command in backgroung
-		# and then checking the exit status of command 
+#while true; do 
+#	echo -n "Enter Instance Type: "
+#	read InstanceType
+#	
+#	if `validateInput "." $`; then
+#		# creating a temp file for exit status storage
+#		TEMP_EXIT_STATUS_FILE="/tmp/aws_temp_exit_status_file"
+#		TEMP_COMMAND_OUTPUT_FILE="/tmp/aws_temp_command_output_file"
+#		> ${TEMP_EXIT_STATUS_FILE}
+#		> ${TEMP_COMMAND_OUTPUT_FILE}
+#		# validating the input instance by running the command in backgroung
+#		# and then checking the exit status of command 
+#
+#		# creating command before inserting into bash sub shell, because subshell doesnt support path expansion.
+#		COMMAND="aws ec2 describe-reserved-instances-offerings --instance-type ${InstanceType} --region ${Region}  > ${TEMP_COMMAND_OUTPUT_FILE} 2>&1 ; echo \$? > ${TEMP_EXIT_STATUS_FILE}"
+#
+#		bash -c  "($COMMAND)" & 
+#		
+#		echo -ne "Validating instance type"
+#		while [[ ! -s ${TEMP_EXIT_STATUS_FILE} ]]; do
+#			echo -ne "."; sleep 0.5;
+#		done
+#
+#		if [[ `cat ${TEMP_EXIT_STATUS_FILE}` == 0  ]]; then
+#			echo 'OK'
+#			break
+#		else
+#			echo 'FAIL'
+#			cat ${TEMP_COMMAND_OUTPUT_FILE}
+#		fi
+#
+#		rm ${TEMP_EXIT_STATUS_FILE}
+#		rm ${TEMP_COMMAND_OUTPUT_FILE}
+#	else
+#		echo "Input seems inaccurate, please check."
+#	fi
+#done
 
-		# creating command before inserting into bash sub shell, because subshell doesnt support path expansion.
-		COMMAND="aws ec2 describe-reserved-instances-offerings --instance-type ${InstanceType} --region ${Region}  > ${TEMP_COMMAND_OUTPUT_FILE} 2>&1 ; echo \$? > ${TEMP_EXIT_STATUS_FILE}"
 
-		bash -c  "($COMMAND)" & 
-		
-		echo -ne "Validating instance type"
-		while [[ ! -s ${TEMP_EXIT_STATUS_FILE} ]]; do
-			echo -ne "."; sleep 0.5;
-		done
 
-		if [[ `cat ${TEMP_EXIT_STATUS_FILE}` == 0  ]]; then
-			echo 'OK'
-			break
-		else
-			echo 'FAIL'
-			cat ${TEMP_COMMAND_OUTPUT_FILE}
-		fi
-
-		rm ${TEMP_EXIT_STATUS_FILE}
-		rm ${TEMP_COMMAND_OUTPUT_FILE}
-	else
-		echo "Input seems inaccurate, please check."
-	fi
-done
-
+#output filename -> slave_spot_instance_type4
+SPOT_ADVISOR_OUTPUT_FILE="slave_spot_instance_type"
+InstanceType=`cut -d' ' -f1 ${SPOT_ADVISOR_OUTPUT_FILE}`
+InstanceAZ=`cut -d' ' -f2 ${SPOT_ADVISOR_OUTPUT_FILE}`
+OnDemandPrice=`cut -d' ' -f3 ${SPOT_ADVISOR_OUTPUT_FILE}`
 
 while true; do 
 	echo -n "Enter URL of the Git Repository: "
@@ -83,6 +90,8 @@ done
 cat <<here >> EC2instanceproperties.sh
 export AMI=$AMI
 export InstanceType=$InstanceType
+export InstanceAZ=$InstanceAZ
+export OnDemandPrice=$OnDemandPrice
 export PassiveInstanceType=$PassiveInstanceType
 export URL=$URL
 here
@@ -106,10 +115,42 @@ aws iam create-instance-profile --instance-profile-name LoadTesting-Instance-Pro
 aws iam add-role-to-instance-profile --instance-profile-name LoadTesting-Instance-Profile --role-name LoadTesting-Role
 sleep 10
 
-#launch instance
-InstanceID=$(aws ec2 run-instances --image-id $AMI --iam-instance-profile Name=LoadTesting-Instance-Profile --key-name $KeyPairName --security-group-ids $DefaultSecurityGroup $SecurityGroup --instance-type $PassiveInstanceType --user-data file://configJenkinsMaster.sh --subnet $Subnet --associate-public-ip-address --output json | grep "InstanceId" | awk '{print $2}' | sed 's/\"//g' | sed 's/\,//g')
+
+#InstanceID=$(aws ec2 run-instances --image-id $AMI --iam-instance-profile Name=LoadTesting-Instance-Profile --key-name $KeyPairName --security-group-ids $DefaultSecurityGroup $SecurityGroup --instance-type $PassiveInstanceType --user-data file://configJenkinsMaster.sh --subnet $Subnet --associate-public-ip-address --output json | grep "InstanceId" | awk '{print $2}' | sed 's/\"//g' | sed 's/\,//g')
+
+
+# START Testing spot implementation 
+# encode the user data
+ENCODED_USER_DATA=`python EncodeToBase64.py configJenkinsMaster.sh` 
+
+RESPONSE=$(aws ec2 request-spot-instances --launch-group "$PROJECT" --spot-price "$OnDemandPrice" --instance-count 1 --type "one-time" --launch-specification "{\"ImageId\": \"$AMI\",  \"KeyName\": \"$KeyPairName\",  \"UserData\": \"$ENCODED_USER_DATA\",  \"InstanceType\": \"$InstanceType\",  \"Placement\": {    \"AvailabilityZone\": \"$InstanceAZ\"  },  \"NetworkInterfaces\": [    {      \"DeviceIndex\": 0,      \"SubnetId\": \"$Subnet\",      \"Groups\": [ \"$DefaultSecurityGroup\", \"$SecurityGroup\" ],      \"AssociatePublicIpAddress\": true    }  ],  \"IamInstanceProfile\": {    \"Name\": \"LoadTesting-Instance-Profile\"  }}" --output json ) 
+
+
+SPOT_REQUEST_ID=$(echo $RESPONSE | grep SpotInstanceRequestId | egrep -o 'sir-.*"' | sed 's/".*//')
+
+echo "Spot Request Opened:" $SPOT_REQUEST_ID
+
+# poll for request to get fullfilled
+echo -ne "extracting instance id(s) "
+while true; do
+        SPOT_REQUEST_STATUS=`aws ec2 describe-spot-instance-requests --spot-instance-request-ids $SPOT_REQUEST_ID |  grep STATUS | cut -d$'\t' -f2`
+        echo -ne "."
+        # wait until request is fulfilled
+        if [ $SPOT_REQUEST_STATUS == "fulfilled" ]
+        then
+               # extract the instance id
+               InstanceID=`aws ec2 describe-spot-instance-requests --spot-instance-request-ids $SPOT_REQUEST_ID --query SpotInstanceRequests[*].{ID:InstanceId}`
+
+                break
+        fi
+        sleep 0.7
+done
+
+# END Testing spot implementation
+
+
 sleep 10
-echo "Jenkins Master created, Instance id= "$InstanceID
+echo -e "\nJenkins Master created, Instance id= "$InstanceID
 
 #find public ip of instance
 MasterIP=$(aws ec2 describe-instances --instance-id $InstanceID --output json | grep "PublicIpAddress" | awk '{print $2}' | sed 's/\"//g' | sed 's/\,//g')
@@ -123,4 +164,6 @@ sleep 300
 echo -ne "Your Jenkins Administrator Password is: "
 sudo ssh -i $KeyPairName.pem -o "StrictHostKeyChecking no" ubuntu@$MasterIP -t "sudo cat /var/lib/jenkins/secrets/initialAdminPassword"
 echo "Done!"
+
+
 
